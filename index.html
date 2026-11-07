@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TradeForge Push Test</title>
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+body{font-family:system-ui,sans-serif;max-width:640px;margin:2rem auto;padding:0 1rem;line-height:1.4}
+button{font-size:1rem;padding:.6rem 1rem;margin:.25rem .25rem .25rem 0}
+textarea{width:100%;height:7rem;font-family:monospace;font-size:.75rem}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+td,th{border:1px solid #ccc;padding:.25rem .5rem;text-align:left}
+#status{font-weight:600}
+</style>
+</head>
+<body>
+<h1>TradeForge Push Test</h1>
+<p>Step 1: allow notifications. Step 2: copy the subscription and paste it to Claude. Step 3: install this page as an app, close it fully, and wait for the test pushes.</p>
+<button id="sub">1. Enable push</button>
+<button id="copy">2. Copy subscription</button>
+<button id="refresh">Refresh log</button>
+<p id="status">Not started.</p>
+<textarea id="subbox" readonly placeholder="Subscription appears here"></textarea>
+<h2>Received pushes</h2>
+<table><thead><tr><th>#</th><th>Sent (ms)</th><th>Received (ms)</th><th>Delay (s)</th></tr></thead><tbody id="log"></tbody></table>
+<script>
+const VAPID_PUBLIC = "BCdrLSst0_Dz5qyHRj2YFkcMDzT9jhgHFmFtS2572syuNTLwwaw3GC7qhMVw6QqDE5uT7M2DHG8pp_C9At5olWU";
+const $ = id => document.getElementById(id);
+function b64(s){const p='='.repeat((4-s.length%4)%4);const r=(s+p).replace(/-/g,'+').replace(/_/g,'/');const raw=atob(r);return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)));}
+function db(){return new Promise((res,rej)=>{const r=indexedDB.open('pushlog',1);r.onupgradeneeded=()=>r.result.createObjectStore('log',{keyPath:'id',autoIncrement:true});r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+async function showLog(){
+  const d=await db();
+  const all=await new Promise(res=>{const q=d.transaction('log').objectStore('log').getAll();q.onsuccess=()=>res(q.result);});
+  $('log').innerHTML=all.map(function(e){return '<tr><td>'+e.seq+'</td><td>'+e.sentAt+'</td><td>'+e.receivedAt+'</td><td>'+((e.receivedAt-e.sentAt)/1000).toFixed(1)+'</td></tr>';}).join('');
+}
+$('sub').onclick=async()=>{
+  try{
+    if(!('serviceWorker' in navigator)||!('PushManager' in window)){$('status').textContent='This browser does not support web push.';return;}
+    const perm=await Notification.requestPermission();
+    if(perm!=='granted'){$('status').textContent='Notification permission: '+perm;return;}
+    const reg=await navigator.serviceWorker.register('sw.js');
+    await navigator.serviceWorker.ready;
+    let s=await reg.pushManager.getSubscription();
+    if(!s) s=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64(VAPID_PUBLIC)});
+    $('subbox').value=JSON.stringify(s);
+    $('status').textContent='Push enabled. Copy the subscription next.';
+  }catch(e){$('status').textContent='Error: '+e.message;}
+};
+$('copy').onclick=async()=>{
+  try{await navigator.clipboard.writeText($('subbox').value);$('status').textContent='Copied. Paste it to Claude.';}
+  catch(e){$('subbox').select();$('status').textContent='Select the box and copy manually.';}
+};
+$('refresh').onclick=showLog;
+showLog();
+</script>
+</body>
+</html>
